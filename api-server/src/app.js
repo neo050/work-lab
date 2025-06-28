@@ -20,6 +20,7 @@ app.get('/', (req, res) => {
     message: '🦄🌈✨👋🌎🌍🌏✨🌈🦄',
   });
 });
+app.get('/health', (_, res) => res.sendStatus(200));
 
 app.use('/api/v1', api);
 
