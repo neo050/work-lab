@@ -7,14 +7,14 @@ on:
 
 jobs:
   build-test-health:
-    runs-on: ubuntu-latest     # Runner GitHub מוכן מראש עם Docker
+    runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: pgpass
-        ports:
-          - 5432:5432
+        ports: [ "5432:5432" ]
         options: >-
           --health-cmd="pg_isready -U postgres"
           --health-interval=10s
@@ -22,39 +22,33 @@ jobs:
           --health-retries=5
 
     steps:
-    # 1. Checkout code
     - uses: actions/checkout@v4
 
-    # 2. Setup Node 18
+    # שים לב ל-working-directory
     - uses: actions/setup-node@v4
       with:
         node-version: 18
         cache: 'npm'
+        cache-dependency-path: api-server/package-lock.json   # ← כאן
+    - name: Install deps
+      run: npm ci
+      working-directory: api-server                          # ← וכאן
 
-    # 3. Install deps
-    - run: npm ci
-
-    # 4. Unit / lint tests (אם אין, החלק יעבור מיד)
-    - run: |
+    - name: Tests (optional)
+      run: |
         echo "🔎 running npm test"
-        npm test || echo "⚠️  no tests defined – skipping"
+        npm test || echo "⚠️  no tests"
+      working-directory: api-server
 
-    # 5. Start API (ברקע) + wait
-    - run: |
-        node ./index.js &
-        echo "⏳ waiting for API to come up…"
+    - name: Start API
+      run: |
+        node index.js &
         sleep 5
+      working-directory: api-server
 
-    # 6. Health-check script
     - name: Health Check
       run: |
         bash scripts/healthcheck.sh
-        tail -n 1 logs/healthcheck.log       # הדפס שורה אחרונה ללוג ה-CI
-        grep 'APP:200' logs/healthcheck.log  # יפיל את ה-Job אם אין 200
+        tail -n 1 logs/healthcheck.log
+        grep 'APP:200' logs/healthcheck.log
         grep 'DB:OK'  logs/healthcheck.log
-
-    # 7. Archive health-logs בארטיפקט
-    - uses: actions/upload-artifact@v4
-      with:
-        name: health-logs
-        path: logs/healthcheck.log
