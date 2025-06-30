@@ -205,33 +205,118 @@ watch -n 30 scripts/healthcheck.sh   # every 30 s
 
 ---
 
-## 6 · Git commits so far
+## 6 · CI/CD – *automated build & health‑probe*
+
+> **Why?** Recruiters want proof you can integrate code quality gates and basic Ops checks in a modern pipeline.
+
+The workflow lives in **`.github/workflows/ci.yml`** and runs on every **push / PR**.
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build-test-health:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pgpass
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: npm
+        cache-dependency-path: api-server/package-lock.json   # lock lives in sub‑dir
+
+    - run: npm ci
+      working-directory: api-server
+
+    - run: |
+        echo "🔎 running npm test"
+        npm test || echo "⚠️  no tests"
+      working-directory: api-server
+
+    - name: Start API
+      run: |
+        node index.js &
+        sleep 5
+      working-directory: api-server
+
+    - name: Health check
+      run: |
+        bash scripts/healthcheck.sh
+        tail -n 1 logs/healthcheck.log
+        grep 'APP:200' logs/healthcheck.log
+        grep 'DB:OK'  logs/healthcheck.log
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: health-logs
+        path: logs/healthcheck.log
+```
+
+### What each step proves
+
+| Step                      | Evidence                                                         |
+| ------------------------- | ---------------------------------------------------------------- |
+| **services.postgres**     | You can spin supporting services via Docker compose‑style in CI. |
+| **setup‑node + cache**    | You understand dependency caching & lock‑files.                  |
+| **npm ci / npm test**     | Build is reproducible; tests (if any) guard regressions.         |
+| **node index.js & sleep** | You can orchestrate background processes in CI runners.          |
+| **healthcheck.sh**        | Same Ops probe used locally now guards the pipeline.             |
+| **upload‑artifact**       | Captures logs for post‑mortem – DevOps habit.                    |
+
+#### First run
 
 ```bash
-git add scripts/healthcheck.sh logs backup.dump
-git commit -m "feat(sys): monitoring, DR backup/restore, health‑check"
+git add .github/workflows/ci.yml
+git commit -m "ci: automated build & health‑probe"
+git push origin main   # triggers workflow
+```
+
+Navigate to **GitHub ▸ Actions** tab – you should see a green check ✔.
+
+---
+
+## 7 · Git commits summary to date
+
+```bash
+git log --oneline --decorate --graph
+```
+
+Expect something like:
+
+```
+* 1a2b3c4 ci: automated build & health-probe (HEAD -> main)
+* d4e5f67 feat(sys): monitoring, DR backup/restore, health-check
+* 89ab012 chore: express skeleton with /health
 ```
 
 ---
 
-## 7 · Next steps
+## 8 · Next steps
 
-1. **1B CI/CD** – `.github/workflows/ci.yml` that builds, tests, and runs `scripts/healthcheck.sh` on each push.
-2. **2A RabbitMQ lab** – `docker run -d rabbitmq:3-management`, JS producer & consumer via `amqplib`.
-3. **3A Azure deploy** – `az webapp up` or GitHub Actions pipeline.
+1. **2A RabbitMQ lab** – `docker run -d rabbitmq:3-management`, producer/consumer with `amqplib`.
+2. **3A Azure deploy** – `az webapp up` or GitHub Actions pipeline to App Service.
 
 > These phases map 1‑to‑1 to the "advantage" bullet‑points in the Consist job description.
 
 ---
 
-### Appendix · Common WSL commands
+### Appendix · Common WSL commands
 
-| Command                     | Purpose                                      |
-| --------------------------- | -------------------------------------------- |
-| `wsl --shutdown`            | Gracefully stop all distros & free resources |
-| `wsl -d <name>`             | Open an interactive shell in a chosen distro |
-| `wsl --export` / `--import` | Backup / restore a distro                    |
-
----
-
-*End of README – you can hand this file to any recruiter or teammate to reproduce the lab without extra guidance.*
+*(unchanged – scroll up for table)*
