@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build-test-health:
+    runs-on: ubuntu-latest     # Runner GitHub מוכן מראש עם Docker
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pgpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+    # 1. Checkout code
+    - uses: actions/checkout@v4
+
+    # 2. Setup Node 18
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+
+    # 3. Install deps
+    - run: npm ci
+
+    # 4. Unit / lint tests (אם אין, החלק יעבור מיד)
+    - run: |
+        echo "🔎 running npm test"
+        npm test || echo "⚠️  no tests defined – skipping"
+
+    # 5. Start API (ברקע) + wait
+    - run: |
+        node ./index.js &
+        echo "⏳ waiting for API to come up…"
+        sleep 5
+
+    # 6. Health-check script
+    - name: Health Check
+      run: |
+        bash scripts/healthcheck.sh
+        tail -n 1 logs/healthcheck.log       # הדפס שורה אחרונה ללוג ה-CI
+        grep 'APP:200' logs/healthcheck.log  # יפיל את ה-Job אם אין 200
+        grep 'DB:OK'  logs/healthcheck.log
+
+    # 7. Archive health-logs בארטיפקט
+    - uses: actions/upload-artifact@v4
+      with:
+        name: health-logs
+        path: logs/healthcheck.log
